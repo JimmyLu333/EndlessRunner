@@ -9,7 +9,8 @@ import os
 pygame.init()
 
 # Set up display
-WIDTH, HEIGHT = 800, 400
+# Increased resolution
+WIDTH, HEIGHT = 1280, 720
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Endless Runner")
 
@@ -26,11 +27,14 @@ font = get_font()
 title_font = pygame.font.SysFont(None, 48)
 button_font = pygame.font.SysFont(None, 36)
 
+# Base safe-ground height (used for player start and safe area)
+GROUND_BASE_HEIGHT = 80
+
 # Player properties
 def reset_player():
     global player_x, player_y, player_vel_y, player_vel_x, on_ground
     player_x = 100
-    player_y = HEIGHT - player_height - 40  # 40px ground height
+    player_y = HEIGHT - player_height - GROUND_BASE_HEIGHT
     player_vel_y = 0
     player_vel_x = 0
     on_ground = True
@@ -39,11 +43,21 @@ player_width, player_height = 50, 50
 reset_player()
 gravity = 1
 jump_power = -18
+# Double-jump pickup state
+double_jump_available = False   # player has pickup and can double-jump
+double_jump_used = False        # whether double jump used during current airtime
+pickup_spawned = False
+pickup_x = 0.0
+pickup_y = 0.0
+pickup_radius = 18
+next_spawn_score = 10  # spawn first at score 10; if missed, set to 20
 
 # Ground segment properties
-GROUND_SCROLL_SPEED = 6
-GROUND_MIN_HEIGHT = 30
-GROUND_MAX_HEIGHT = 80
+# Ground scroll speed in pixels per second (time-based)
+GROUND_SCROLL_PPS = 360
+# Make ground generally higher by raising the random height range
+GROUND_MIN_HEIGHT = 60
+GROUND_MAX_HEIGHT = 140
 GROUND_WIDTH = 120
 GAP_MIN = 60
 GAP_MAX = 180
@@ -52,7 +66,8 @@ GAP_MAX = 180
 score = 0
 score_timer = 0  # milliseconds
 
-safe_area_segments = int(400 // GROUND_WIDTH) + 1
+safe_area_segments = int(WIDTH // GROUND_WIDTH) + 1
+GEN_BUFFER = WIDTH  # extra pixels to generate ahead to avoid popping
 
 # Ground generation
 def reset_ground():
@@ -61,7 +76,7 @@ def reset_ground():
     ground_y_base = HEIGHT
     current_x = 0
     for _ in range(safe_area_segments):
-        ground_segments.append([current_x, 40, GROUND_WIDTH])
+        ground_segments.append([current_x, GROUND_BASE_HEIGHT, GROUND_WIDTH])
         current_x += GROUND_WIDTH
     while current_x < WIDTH + GROUND_WIDTH:
         gap = random.randint(GAP_MIN, GAP_MAX)
@@ -169,9 +184,16 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE and on_ground:
-                player_vel_y = jump_power
-                on_ground = False
+            if event.key == pygame.K_SPACE:
+                # Normal jump
+                if on_ground:
+                    player_vel_y = jump_power
+                    on_ground = False
+                    double_jump_used = False
+                # Double jump if pickup available and not yet used in this airtime
+                elif double_jump_available and not double_jump_used:
+                    player_vel_y = jump_power
+                    double_jump_used = True
 
     # Get pressed keys
     keys = pygame.key.get_pressed()
@@ -193,16 +215,16 @@ while running:
     player_vel_y += gravity
     player_y += player_vel_y
 
-    # Scroll ground segments
+    # Scroll ground segments (time-based)
     for seg in ground_segments:
-        seg[0] -= GROUND_SCROLL_SPEED
+        seg[0] -= GROUND_SCROLL_PPS * (dt / 1000.0)
 
-    # Remove off-screen segments
-    while ground_segments and ground_segments[0][0] + ground_segments[0][2] < 0:
+    # Remove off-screen segments (with buffer)
+    while ground_segments and ground_segments[0][0] + ground_segments[0][2] < -GEN_BUFFER:
         ground_segments.pop(0)
 
-    # Add new segments if needed
-    while ground_segments and ground_segments[-1][0] < WIDTH:
+    # Add new segments if needed (generate ahead by GEN_BUFFER)
+    while ground_segments and ground_segments[-1][0] < WIDTH + GEN_BUFFER:
         gap = random.randint(GAP_MIN, GAP_MAX)
         new_x = ground_segments[-1][0] + ground_segments[-1][2] + gap
         new_height = random.randint(GROUND_MIN_HEIGHT, GROUND_MAX_HEIGHT)
@@ -223,12 +245,42 @@ while running:
                     player_on_ground = True
                     break
     on_ground = player_on_ground
+    # Reset double-jump usage when player lands
+    if on_ground:
+        double_jump_used = False
 
     # Score: add 1 point every second
     score_timer += dt
     if score_timer >= 1000:
         score += 1
         score_timer -= 1000
+
+    # Spawn pickup logic: spawn when score reaches next_spawn_score if not already spawned
+    if not pickup_spawned and not double_jump_available and score >= next_spawn_score:
+        # spawn pickup ahead of player
+        pickup_spawned = True
+        # place pickup somewhere ahead (e.g., middle-right area)
+        pickup_x = WIDTH + 200
+        pickup_y = HEIGHT - GROUND_BASE_HEIGHT - 150
+
+    # Move pickup with world (same rate as ground)
+    if pickup_spawned:
+        pickup_x -= GROUND_SCROLL_PPS * (dt / 1000.0)
+
+        # If pickup goes off-screen without being collected, schedule next spawn at +10 score
+        if pickup_x + pickup_radius < -GEN_BUFFER:
+            pickup_spawned = False
+            next_spawn_score += 10
+
+        # Collision with player (simple circle-rect overlap)
+        if pickup_spawned:
+            px = int(player_x + player_width/2)
+            py = int(player_y + player_height/2)
+            dx = px - int(pickup_x)
+            dy = py - int(pickup_y)
+            if dx*dx + dy*dy <= (pickup_radius + max(player_width, player_height)/2)**2:
+                double_jump_available = True
+                pickup_spawned = False
 
     # Restart game if player falls off (dead zone)
     if player_y > HEIGHT:
@@ -244,6 +296,11 @@ while running:
             score_timer = 0
             reset_player()
             reset_ground()
+            # reset pickup/double-jump state for new run
+            double_jump_available = False
+            double_jump_used = False
+            pickup_spawned = False
+            next_spawn_score = 10
             continue
         elif choice == 'menu':
             # go back to main menu
@@ -253,6 +310,11 @@ while running:
                 score_timer = 0
                 reset_player()
                 reset_ground()
+                # reset pickup/double-jump state for new run
+                double_jump_available = False
+                double_jump_used = False
+                pickup_spawned = False
+                next_spawn_score = 10
                 continue
             else:
                 running = False
@@ -266,7 +328,15 @@ while running:
     # Draw ground segments
     for seg in ground_segments:
         seg_x, seg_h, seg_w = seg
-        pygame.draw.rect(screen, (50, 205, 50), (seg_x, ground_y_base - seg_h, seg_w, seg_h))
+        pygame.draw.rect(screen, (50, 205, 50), (int(seg_x), ground_y_base - seg_h, seg_w, seg_h))
+
+    # Draw pickup if spawned
+    if pickup_spawned:
+        pygame.draw.circle(screen, (255, 215, 0), (int(pickup_x), int(pickup_y)), pickup_radius)
+
+    # Draw indicator if player has double-jump available
+    if double_jump_available:
+        pygame.draw.circle(screen, (30, 144, 255), (20, 60), 12)
 
     # Draw player
     pygame.draw.rect(screen, (255, 100, 100), (player_x, int(player_y), player_width, player_height))
