@@ -22,6 +22,10 @@ def get_font():
     return pygame.font.SysFont(None, 36)
 font = get_font()
 
+# Menu / Dead menu fonts
+title_font = pygame.font.SysFont(None, 48)
+button_font = pygame.font.SysFont(None, 36)
+
 # Player properties
 def reset_player():
     global player_x, player_y, player_vel_y, player_vel_x, on_ground
@@ -80,7 +84,84 @@ def set_best_score(new_score):
     with open(BEST_SCORE_FILE, "w") as f:
         f.write(str(new_score))
 
+
+def show_menu():
+    """Show the start menu. Return True to start the game, False to quit."""
+    button_width, button_height = 200, 60
+    start_button_rect = pygame.Rect((WIDTH//2 - button_width//2, HEIGHT//2 - 80), (button_width, button_height))
+    quit_button_rect = pygame.Rect((WIDTH//2 - button_width//2, HEIGHT//2 + 20), (button_width, button_height))
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = pygame.mouse.get_pos()
+                if start_button_rect.collidepoint(mouse_pos):
+                    return True
+                if quit_button_rect.collidepoint(mouse_pos):
+                    return False
+
+        screen.fill((135, 206, 235))
+        title_text = title_font.render("Endless Runner", True, (0,0,0))
+        screen.blit(title_text, (WIDTH//2 - title_text.get_width()//2, 80))
+
+        pygame.draw.rect(screen, (100, 200, 100), start_button_rect)
+        start_text = button_font.render("Start", True, (0,0,0))
+        screen.blit(start_text, (start_button_rect.centerx - start_text.get_width()//2, start_button_rect.centery - start_text.get_height()//2))
+
+        pygame.draw.rect(screen, (200, 100, 100), quit_button_rect)
+        quit_text = button_font.render("Quit", True, (0,0,0))
+        screen.blit(quit_text, (quit_button_rect.centerx - quit_text.get_width()//2, quit_button_rect.centery - quit_text.get_height()//2))
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def show_dead_menu(current_score, best_score):
+    """Show the dead menu. Return 'restart', 'menu', or 'quit'."""
+    button_width, button_height = 200, 60
+    restart_button_rect = pygame.Rect((WIDTH//2 - button_width//2, HEIGHT//2 + 10), (button_width, button_height))
+    menu_button_rect = pygame.Rect((WIDTH//2 - button_width//2, HEIGHT//2 + 90), (button_width, button_height))
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return 'quit'
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = pygame.mouse.get_pos()
+                if restart_button_rect.collidepoint(mouse_pos):
+                    return 'restart'
+                if menu_button_rect.collidepoint(mouse_pos):
+                    return 'menu'
+
+        screen.fill((220, 80, 80))
+        title_text = title_font.render("Game Over", True, (0,0,0))
+        screen.blit(title_text, (WIDTH//2 - title_text.get_width()//2, 60))
+
+        score_text = button_font.render(f"Score: {current_score}", True, (0,0,0))
+        best_text = button_font.render(f"Best: {best_score}", True, (0,0,0))
+        screen.blit(score_text, (WIDTH//2 - score_text.get_width()//2, 140))
+        screen.blit(best_text, (WIDTH//2 - best_text.get_width()//2, 180))
+
+        pygame.draw.rect(screen, (100, 200, 100), restart_button_rect)
+        restart_text = button_font.render("Restart", True, (0,0,0))
+        screen.blit(restart_text, (restart_button_rect.centerx - restart_text.get_width()//2, restart_button_rect.centery - restart_text.get_height()//2))
+
+        pygame.draw.rect(screen, (100, 100, 200), menu_button_rect)
+        menu_text = button_font.render("Menu", True, (0,0,0))
+        screen.blit(menu_text, (menu_button_rect.centerx - menu_text.get_width()//2, menu_button_rect.centery - menu_text.get_height()//2))
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
 # Main game loop
+# Show start menu first
+start = show_menu()
+if not start:
+    pygame.quit()
+    sys.exit()
+
 running = True
 while running:
     dt = clock.tick(FPS)  # milliseconds since last frame
@@ -155,9 +236,30 @@ while running:
         if score > best_score:
             set_best_score(score)
             best_score = score
-        pygame.quit()
-        os.system(f'"{sys.executable}" dead_menu.py {score} {best_score}')
-        sys.exit()
+        # Show in-process dead menu and handle the player's choice
+        choice = show_dead_menu(score, best_score)
+        if choice == 'restart':
+            # reset game state
+            score = 0
+            score_timer = 0
+            reset_player()
+            reset_ground()
+            continue
+        elif choice == 'menu':
+            # go back to main menu
+            go_start = show_menu()
+            if go_start:
+                score = 0
+                score_timer = 0
+                reset_player()
+                reset_ground()
+                continue
+            else:
+                running = False
+                break
+        else:
+            running = False
+            break
 
     screen.fill((135, 206, 235))  # Sky blue background
 
