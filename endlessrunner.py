@@ -5,6 +5,7 @@ import sys
 import random
 import os
 import math
+import re
 
 # Initialize Pygame
 pygame.init()
@@ -183,14 +184,85 @@ class ParallaxBackground:
             l.draw(surface)
 
 
-def create_background():
-    # You can drop any of these files into the game folder; present ones will be used
-    candidates = [
-        ("bg_far.png", 0.2),
-        ("bg_mid.png", 0.45),
-        ("bg_near.png", 0.75),
-        ("background.png", 0.6),  # generic single-layer background
+def _find_new_background_path():
+    """Find a user-added background image like 'background (1).png', 'background(1).png' or 'background（1）.png'."""
+    bases = [
+        os.path.dirname(__file__),
+        os.getcwd(),
+        os.path.join(os.path.dirname(__file__), "decoration"),
     ]
+    # Match: background[optional space][( or （]1[) or ）].(png|jpg|jpeg), case-insensitive
+    pat = re.compile(r"^background\s*[\(（]1[\)）]\.(png|jpg|jpeg)$", re.IGNORECASE)
+    for base in bases:
+        try:
+            for fname in os.listdir(base):
+                if pat.match(fname):
+                    return os.path.join(base, fname)
+        except Exception:
+            continue
+    # Fallback: recursive search under the script directory
+    root = os.path.dirname(__file__)
+    try:
+        for dirpath, _dirs, files in os.walk(root):
+            for fname in files:
+                if pat.match(fname):
+                    return os.path.join(dirpath, fname)
+    except Exception:
+        pass
+    return None
+
+def _find_generic_background_path():
+    """Find 'background.png/jpg/jpeg' in root or decoration folders, case-insensitive (e.g., Background.png)."""
+    exts = (".png", ".jpg", ".jpeg")
+    bases = [os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), "decoration")]
+    for base in bases:
+        try:
+            for fname in os.listdir(base):
+                lower = fname.lower()
+                if lower.startswith("background") and lower.endswith(exts):
+                    return os.path.join(base, fname)
+        except Exception:
+            continue
+    return None
+
+
+def create_background():
+    # Prefer a newly added single background like 'background (1).png' if present
+    nb = _find_new_background_path() or _find_generic_background_path()
+    if nb:
+        try:
+            print(f"[background] Using: {nb}")
+        except Exception:
+            pass
+        return ParallaxBackground([l for l in [ParallaxLayer(nb, 0.6)] if l and l.enabled])
+
+    # Otherwise, try layered backgrounds
+    names = ["bg_far.png", "bg_mid.png", "bg_near.png", "background.png"]
+    candidates = []
+    for nm, spd in zip(names, [0.2, 0.45, 0.75, 0.6]):
+        # check both root and decoration folder, case-insensitive
+        paths = [
+            os.path.join(os.path.dirname(__file__), nm),
+            os.path.join(os.path.dirname(__file__), "decoration", nm),
+        ]
+        found = None
+        for p in paths:
+            if os.path.exists(p):
+                found = p
+                break
+            # try case-insensitive scan in the directory containing p
+            d = os.path.dirname(p)
+            try:
+                for f in os.listdir(d):
+                    if f.lower() == nm.lower():
+                        found = os.path.join(d, f)
+                        break
+            except Exception:
+                pass
+            if found:
+                break
+        if found:
+            candidates.append((found, spd))
     layers = []
     for path, spd in candidates:
         layer = ParallaxLayer(path, spd)
@@ -242,6 +314,8 @@ HEAD_CROP_FRAC = 0.35  # fraction of source sprite width used for the left head
 TAIL_CROP_FRAC = 0.35  # fraction of source sprite width used for the right tail
 SHORT_PLATFORM_MIN_FRAC = 0.25  # min width of a short platform as fraction of base sprite width
 SHORT_PLATFORM_MAX_FRAC = 0.45  # max width of a short platform as fraction of base sprite width
+
+# No around frame; keep platform vertical band as configured above
 
 def draw_ground_tiled(surface, img, seg_x, seg_top, seg_w, seg_h):
     """Draw a platform using head/tail cropping for short widths; full blit for full width.
@@ -309,6 +383,28 @@ def draw_ground_tiled(surface, img, seg_x, seg_top, seg_w, seg_h):
 def get_font():
     return pygame.font.SysFont(None, 36)
 font = get_font()
+
+def draw_text_with_outline(surface, text, font, pos, color=(255,255,255), outline_color=(0,0,0), outline=2, bg_alpha=120):
+    """Draw text with a subtle translucent background and an outline so it's always visible on any background."""
+    if not text:
+        return
+    # render main and outline
+    main = font.render(text, True, color)
+    if outline > 0:
+        out = font.render(text, True, outline_color)
+    else:
+        out = None
+    x, y = pos
+    # translucent bg behind text for contrast
+    pad_x, pad_y = 8, 4
+    bg = pygame.Surface((main.get_width() + pad_x*2, main.get_height() + pad_y*2), pygame.SRCALPHA)
+    bg.fill((0,0,0,bg_alpha))
+    surface.blit(bg, (x - pad_x, y - pad_y))
+    # outline (simple 8-direction) then main
+    if out:
+        for ox, oy in [(-outline,0),(outline,0),(0,-outline),(0,outline),(-outline,-outline),(-outline,outline),(outline,-outline),(outline,outline)]:
+            surface.blit(out, (x+ox, y+oy))
+    surface.blit(main, (x, y))
 
 # Menu / Dead menu fonts
 title_font = pygame.font.SysFont(None, 48)
@@ -708,9 +804,15 @@ while running:
         # Fallback to rectangle if sprites fail to load
         pygame.draw.rect(screen, (255, 100, 100), (player_x, int(player_y), player_width, player_height))
 
-    # Draw score (top right)
-    score_text = font.render(f"Score: {score}", True, (0,0,0))
-    screen.blit(score_text, (WIDTH - score_text.get_width() - 20, 20))
+    # Draw score (top-right), on top of everything with outline and bg
+    text_str = f"Score: {score}"
+    # Measure to right-align
+    tmp = font.render(text_str, True, (255,255,255))
+    tx = WIDTH - tmp.get_width() - 20
+    ty = 20
+    draw_text_with_outline(screen, text_str, font, (tx, ty), color=(255,255,255), outline_color=(0,0,0), outline=2, bg_alpha=120)
+
+    # No around frame overlay
 
     pygame.display.flip()
 
