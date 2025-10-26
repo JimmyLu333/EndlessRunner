@@ -20,6 +20,22 @@ pygame.display.set_caption("Endless Runner")
 clock = pygame.time.Clock()
 FPS = 60
 
+# Utility: scale an image to cover the target area while maintaining aspect ratio
+def _scale_image_cover(img, target_w, target_h):
+    iw, ih = img.get_width(), img.get_height()
+    if iw == 0 or ih == 0:
+        return img, (0, 0)
+    scale = max(target_w / iw, target_h / ih)
+    nw = max(1, int(round(iw * scale)))
+    nh = max(1, int(round(ih * scale)))
+    try:
+        scaled = pygame.transform.smoothscale(img, (nw, nh))
+    except Exception:
+        scaled = pygame.transform.scale(img, (nw, nh))
+    x = (target_w - nw) // 2
+    y = (target_h - nh) // 2
+    return scaled, (x, y)
+
 # Sprite Animation System
 class PlayerSprites:
     def __init__(self):
@@ -275,6 +291,42 @@ def _find_generic_background_path():
         except Exception:
             continue
     return None
+
+def _load_menu_background_image():
+    """Look for a 'MainMenuBG' image (png/jpg/jpeg) in decoration or root, case-insensitive."""
+    exts = (".png", ".jpg", ".jpeg")
+    bases = [os.path.join(os.path.dirname(__file__), "decoration"), os.path.dirname(__file__)]
+    for base in bases:
+        try:
+            for fname in os.listdir(base):
+                lower = fname.lower()
+                if lower.startswith("mainmenubg") and lower.endswith(exts):
+                    path = os.path.join(base, fname)
+                    try:
+                        img = pygame.image.load(path).convert_alpha()
+                        return img
+                    except Exception:
+                        pass
+        except Exception:
+            continue
+    return None
+
+# Prepare Main Menu background surface if available (after loader is defined)
+MENU_BG_SURF = None
+MENU_BG_POS = (0, 0)
+try:
+    _raw_menu_bg = _load_menu_background_image()
+except Exception:
+    _raw_menu_bg = None
+if _raw_menu_bg is not None:
+    try:
+        MENU_BG_SURF, MENU_BG_POS = _scale_image_cover(_raw_menu_bg, WIDTH, HEIGHT)
+    except Exception:
+        try:
+            MENU_BG_SURF = pygame.transform.smoothscale(_raw_menu_bg, (WIDTH, HEIGHT))
+        except Exception:
+            MENU_BG_SURF = pygame.transform.scale(_raw_menu_bg, (WIDTH, HEIGHT))
+        MENU_BG_POS = (0, 0)
 
 
 def create_background():
@@ -563,7 +615,48 @@ def draw_text_with_outline(surface, text, font, pos, color=(255,255,255), outlin
     surface.blit(main, (x, y))
 
 # Menu / Dead menu fonts
-title_font = pygame.font.SysFont(None, 48)
+def get_title_font(size=56):
+    """Load a fancier title font if available; fallback to a system fancy font, else default.
+    Search for TTFs in decoration/ and fonts/ first.
+    """
+    # 1) Try bundled TTFs
+    ttf_names = [
+        "MainMenuTitle.ttf", "Title.ttf", "menu-title.ttf", "Fancy.ttf",
+    ]
+    bases = [os.path.join(os.path.dirname(__file__), "decoration"),
+             os.path.join(os.path.dirname(__file__), "fonts"),
+             os.path.dirname(__file__)]
+    for base in bases:
+        try:
+            files = set(os.listdir(base))
+        except Exception:
+            files = set()
+        for ttf in ttf_names:
+            for f in files:
+                if f.lower() == ttf.lower():
+                    try:
+                        return pygame.font.Font(os.path.join(base, f), size)
+                    except Exception:
+                        pass
+    # 2) Try some fancy system fonts
+    fancy_candidates = [
+        "Papyrus", "Chiller", "Gabriola", "Harlow Solid Italic", "Vivaldi",
+        "Monotype Corsiva", "Brush Script MT", "Segoe Script", "Lucida Handwriting",
+        "Comic Sans MS"
+    ]
+    for name in fancy_candidates:
+        try:
+            f = pygame.font.SysFont(name, size)
+            # SysFont always returns something; ensure it differs a bit by setting bold/italic for flair
+            if name in ("Harlow Solid Italic", "Vivaldi", "Monotype Corsiva"):
+                f.set_italic(True)
+            return f
+        except Exception:
+            continue
+    # 3) Fallback
+    return pygame.font.SysFont(None, size)
+
+title_font = get_title_font(56)
 button_font = pygame.font.SysFont(None, 36)
 
 # Base safe-ground height (used for player start and safe area)
@@ -684,9 +777,20 @@ def show_menu():
                 if quit_button_rect.collidepoint(mouse_pos):
                     return False
 
-        screen.fill((135, 206, 235))
-        title_text = title_font.render("Endless Runner", True, (0,0,0))
-        screen.blit(title_text, (WIDTH//2 - title_text.get_width()//2, 80))
+        # Draw menu background image if available
+        if MENU_BG_SURF is not None:
+            # Optional base fill behind translucent images
+            screen.fill((0,0,0))
+            screen.blit(MENU_BG_SURF, MENU_BG_POS)
+        else:
+            screen.fill((135, 206, 235))
+
+        # Title: move slightly lower and render with outline for readability on images
+        title_str = "Endless Runner"
+        tmp_title = title_font.render(title_str, True, (255,255,255))
+        title_x = WIDTH//2 - tmp_title.get_width()//2
+        title_y = 120  # slightly lower than before (was 80)
+        draw_text_with_outline(screen, title_str, title_font, (title_x, title_y), color=(255,255,255), outline_color=(0,0,0), outline=3, bg_alpha=80)
 
         pygame.draw.rect(screen, (100, 200, 100), start_button_rect)
         start_text = button_font.render("Start", True, (0,0,0))
