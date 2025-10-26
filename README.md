@@ -1,4 +1,4 @@
-# Student Bullying Statistics Analysis
+# EndlessRunner
 
 This is a Endless runner game.
 
