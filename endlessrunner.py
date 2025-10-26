@@ -18,6 +18,110 @@ pygame.display.set_caption("Endless Runner")
 clock = pygame.time.Clock()
 FPS = 60
 
+# Sprite Animation System
+class PlayerSprites:
+    def __init__(self):
+        self.animations = {}
+        self.current_animation = 'idle'
+        self.frame_index = 0
+        self.animation_speed = 0.15
+        # Per-frame foot baseline storage (transparent pixels below feet)
+        self.frame_foot = {}
+        # Baseline used when standing on ground (stable across frames)
+        self.run_foot_baseline = None
+        # Small base adjustment if needed
+        self.foot_offset_base = 1
+        # A tiny visual nudge to draw the sprite a few pixels lower (downwards)
+        self.draw_offset_down = 0
+        self.load_sprites()
+    
+    def load_sprites(self):
+        # Load idle animation - Increase character size further
+        self.animations['idle'] = []
+        self.frame_foot['idle'] = []
+        for i in range(1, 25):  # idle_00001.png to idle_00024.png
+            try:
+                img = pygame.image.load(f"cloaked char/idle/idle_{i:05d}.png").convert_alpha()
+                img = pygame.transform.scale(img, (150, 200))  # Larger size
+                # Compute bottom transparent pixels to estimate foot baseline
+                bbox = img.get_bounding_rect(min_alpha=1)
+                bottom_transparent = img.get_height() - (bbox.y + bbox.height)
+                self.animations['idle'].append(img)
+                self.frame_foot['idle'].append(bottom_transparent)
+            except:
+                pass
+        
+        # Load run animation
+        self.animations['run'] = []
+        self.frame_foot['run'] = []
+        for i in range(6, 19):  # run_00006.png to run_00018.png
+            try:
+                img = pygame.image.load(f"cloaked char/run/runloop/run_{i:05d}.png").convert_alpha()
+                img = pygame.transform.scale(img, (150, 200))  # Larger size
+                bbox = img.get_bounding_rect(min_alpha=1)
+                bottom_transparent = img.get_height() - (bbox.y + bbox.height)
+                self.animations['run'].append(img)
+                self.frame_foot['run'].append(bottom_transparent)
+            except:
+                pass
+        # Establish a stable ground baseline using the max across run frames
+        if self.frame_foot.get('run'):
+            self.run_foot_baseline = max(self.frame_foot['run'])
+        else:
+            self.run_foot_baseline = 14
+        
+        # Load jump animation
+        self.animations['jump'] = []
+        self.frame_foot['jump'] = []
+        for i in range(1, 13):  # jump_00001.png to jump_00012.png
+            try:
+                img = pygame.image.load(f"cloaked char/jump/jump_{i:05d}.png").convert_alpha()
+                img = pygame.transform.scale(img, (150, 200))  # Larger size
+                bbox = img.get_bounding_rect(min_alpha=1)
+                bottom_transparent = img.get_height() - (bbox.y + bbox.height)
+                self.animations['jump'].append(img)
+                self.frame_foot['jump'].append(bottom_transparent)
+            except:
+                pass
+        
+        # Load fall animation
+        self.animations['fall'] = []
+        self.frame_foot['fall'] = []
+        for i in range(12, 25):  # fall_00012.png to fall_00024.png
+            try:
+                img = pygame.image.load(f"cloaked char/fall/fall_{i:05d}.png").convert_alpha()
+                img = pygame.transform.scale(img, (150, 200))  # Larger size
+                bbox = img.get_bounding_rect(min_alpha=1)
+                bottom_transparent = img.get_height() - (bbox.y + bbox.height)
+                self.animations['fall'].append(img)
+                self.frame_foot['fall'].append(bottom_transparent)
+            except:
+                pass
+
+    def ground_foot_offset(self):
+        # Use a stable baseline (run animation) plus a small base tweak
+        base = self.run_foot_baseline if self.run_foot_baseline is not None else 14
+        return int(base + self.foot_offset_base)
+    
+    def set_animation(self, animation_name):
+        if animation_name != self.current_animation and animation_name in self.animations:
+            self.current_animation = animation_name
+            self.frame_index = 0
+    
+    def update(self):
+        if self.current_animation in self.animations and len(self.animations[self.current_animation]) > 0:
+            self.frame_index += self.animation_speed
+            if self.frame_index >= len(self.animations[self.current_animation]):
+                self.frame_index = 0
+    
+    def get_current_sprite(self):
+        if self.current_animation in self.animations and len(self.animations[self.current_animation]) > 0:
+            return self.animations[self.current_animation][int(self.frame_index)]
+        return None
+
+# Initialize player sprites
+player_sprites = PlayerSprites()
+
 # Font for score
 def get_font():
     return pygame.font.SysFont(None, 36)
@@ -39,7 +143,7 @@ def reset_player():
     player_vel_x = 0
     on_ground = True
 
-player_width, player_height = 50, 50
+player_width, player_height = 150, 200  # Updated to match larger sprite size
 reset_player()
 gravity = 1
 jump_power = -18
@@ -59,8 +163,8 @@ GROUND_SCROLL_PPS = 360
 GROUND_MIN_HEIGHT = 60
 GROUND_MAX_HEIGHT = 140
 GROUND_WIDTH = 120
-GAP_MIN = 60
-GAP_MAX = 180
+GAP_MIN = 100  # Increased minimum gap
+GAP_MAX = 250  # Increased maximum gap
 
 # Score system
 score = 0
@@ -230,17 +334,23 @@ while running:
         new_height = random.randint(GROUND_MIN_HEIGHT, GROUND_MAX_HEIGHT)
         ground_segments.append([new_x, new_height, GROUND_WIDTH])
 
-    # Find the ground height under the player (if any)
-    player_bottom = player_y + player_height
+    # Find the ground height under the player (if any) - Using smaller collision box
+    collision_width = int(player_width * 0.7)  # 70% of visual width for collision
+    collision_height = int(player_height * 0.8)  # 80% of visual height for collision
+    collision_x = player_x + (player_width - collision_width) // 2  # Center the collision box
+    collision_y = player_y + (player_height - collision_height)  # Bottom-align collision box
+    
+    player_bottom = collision_y + collision_height
     player_on_ground = False
     if player_vel_y >= 0:  # Only check collision if falling
         for i, seg in enumerate(ground_segments):
             seg_x, seg_h, seg_w = seg
             seg_top = ground_y_base - seg_h
-            if player_x + player_width > seg_x and player_x < seg_x + seg_w:
+            if collision_x + collision_width > seg_x and collision_x < seg_x + seg_w:
                 # Player is above this segment
-                if player_bottom >= seg_top and player_y < seg_top:
-                    player_y = seg_top - player_height
+                if player_bottom >= seg_top and collision_y < seg_top:
+                    # Place the sprite so that its feet touch the ground consistently
+                    player_y = seg_top - player_height + player_sprites.ground_foot_offset()
                     player_vel_y = 0
                     player_on_ground = True
                     break
@@ -248,6 +358,26 @@ while running:
     # Reset double-jump usage when player lands
     if on_ground:
         double_jump_used = False
+        # Snap feet to ground each frame to avoid any tiny air gap due to rounding
+        for seg in ground_segments:
+            seg_x, seg_h, seg_w = seg
+            seg_top = ground_y_base - seg_h
+            if collision_x + collision_width > seg_x and collision_x < seg_x + seg_w:
+                player_y = seg_top - player_height + player_sprites.ground_foot_offset()
+                break
+    
+    # Update player animation based on state
+    if player_vel_y < -2:  # Jumping up
+        player_sprites.set_animation('jump')
+    elif player_vel_y > 2:  # Falling down
+        player_sprites.set_animation('fall')
+    elif on_ground:  # On ground - running
+        player_sprites.set_animation('run')
+    else:  # Default to idle
+        player_sprites.set_animation('idle')
+    
+    # Update sprite animation
+    player_sprites.update()
 
     # Score: add 1 point every second
     score_timer += dt
@@ -338,8 +468,14 @@ while running:
     if double_jump_available:
         pygame.draw.circle(screen, (30, 144, 255), (20, 60), 12)
 
-    # Draw player
-    pygame.draw.rect(screen, (255, 100, 100), (player_x, int(player_y), player_width, player_height))
+    # Draw player sprite
+    current_sprite = player_sprites.get_current_sprite()
+    if current_sprite:
+        # Draw a couple pixels lower to visually close any tiny residual gap
+        screen.blit(current_sprite, (player_x, int(player_y + player_sprites.draw_offset_down)))
+    else:
+        # Fallback to rectangle if sprites fail to load
+        pygame.draw.rect(screen, (255, 100, 100), (player_x, int(player_y), player_width, player_height))
 
     # Draw score (top right)
     score_text = font.render(f"Score: {score}", True, (0,0,0))
