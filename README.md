@@ -7,9 +7,9 @@ Press A and D for moving, Space for jump.
 Game is endless, try your best to gain the highest score!!!
 
 # Game Mechanics:
-        >Coin: Score + 1 <br>
-        >Diamond: Gain Double Jump<br>
-        >Arrow: Generate when score >= 30, Collide with it, Game End!<br>
+Coin: Score + 1 <br>
+Diamond: Gain Double Jump<br>
+Arrow: Generate when score >= 30, Collide with it, Game End!<br>
 
 # Credits
 
