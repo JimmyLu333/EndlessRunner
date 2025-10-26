@@ -183,6 +183,57 @@ class ParallaxBackground:
         for l in self.layers:
             l.draw(surface)
 
+def _load_arrow_image():
+    """Load arrow image from decoration/arrow.png (case-insensitive), fallback to root."""
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "decoration"),
+        os.path.dirname(__file__),
+    ]
+    for base in candidates:
+        try:
+            for fname in os.listdir(base):
+                if fname.lower() == "arrow.png":
+                    path = os.path.join(base, fname)
+                    img = pygame.image.load(path).convert_alpha()
+                    return img
+        except Exception:
+            pass
+    return None
+
+def _load_gold_image():
+    """Load gold coin image from decoration/gold.png (case-insensitive), fallback to root."""
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "decoration"),
+        os.path.dirname(__file__),
+    ]
+    for base in candidates:
+        try:
+            for fname in os.listdir(base):
+                if fname.lower() == "gold.png":
+                    path = os.path.join(base, fname)
+                    img = pygame.image.load(path).convert_alpha()
+                    return img
+        except Exception:
+            pass
+    return None
+
+def _load_diamond_image():
+    """Load double-jump pickup image from decoration/diamondjump.png (case-insensitive), fallback to root."""
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "decoration"),
+        os.path.dirname(__file__),
+    ]
+    for base in candidates:
+        try:
+            for fname in os.listdir(base):
+                if fname.lower() == "diamondjump.png":
+                    path = os.path.join(base, fname)
+                    img = pygame.image.load(path).convert_alpha()
+                    return img
+        except Exception:
+            pass
+    return None
+
 
 def _find_new_background_path():
     """Find a user-added background image like 'background (1).png', 'background(1).png' or 'background（1）.png'."""
@@ -286,6 +337,111 @@ def load_ground_tile():
     return None
 
 GROUND_TILE_IMG = load_ground_tile()
+
+# Arrow settings and assets
+ARROW_IMG = _load_arrow_image()
+ARROW_SPEED = 700.0  # pixels per second
+ARROW_SPAWN_SCORE_THRESHOLD = 30
+ARROW_SPAWN_MIN_MS = 1200
+ARROW_SPAWN_MAX_MS = 2400
+ARROW_OFFSCREEN_MARGIN = 120
+# Visual settings: make arrow smaller
+ARROW_TARGET_LONG = 64  # target length (max(width,height)) in pixels
+# Base direction of the sprite art: 'left' or 'right'
+ARROW_BASE_DIRECTION = 'left'
+
+# Scale arrow image down if needed
+if ARROW_IMG is not None:
+    try:
+        aw, ah = ARROW_IMG.get_width(), ARROW_IMG.get_height()
+        long_edge = max(aw, ah)
+        if long_edge > ARROW_TARGET_LONG:
+            scale = ARROW_TARGET_LONG / float(max(1, long_edge))
+            nw = max(1, int(round(aw * scale)))
+            nh = max(1, int(round(ah * scale)))
+            try:
+                ARROW_IMG = pygame.transform.smoothscale(ARROW_IMG, (nw, nh))
+            except Exception:
+                ARROW_IMG = pygame.transform.scale(ARROW_IMG, (nw, nh))
+    except Exception:
+        pass
+
+# Gold coin settings and assets
+GOLD_IMG = _load_gold_image()
+GOLD_TARGET_LONG = 32  # smaller coin per request
+GOLD_OFFSCREEN_MARGIN = 120
+GOLD_SPAWN_MIN_MS = 900
+GOLD_SPAWN_MAX_MS = 1800
+GOLD_MAX_ACTIVE = 5
+golds = []  # list of dicts: {x,y}
+gold_spawn_timer = 0
+gold_next_spawn = random.randint(GOLD_SPAWN_MIN_MS, GOLD_SPAWN_MAX_MS)
+
+# Scale gold coin image to target long edge
+if GOLD_IMG is not None:
+    try:
+        gw, gh = GOLD_IMG.get_width(), GOLD_IMG.get_height()
+        glong = max(gw, gh)
+        target = max(1, GOLD_TARGET_LONG)
+        # Always scale to target long edge (up or down)
+        if abs(glong - target) > 1:
+            gscale = target / float(glong)
+            gnw = max(1, int(round(gw * gscale)))
+            gnh = max(1, int(round(gh * gscale)))
+            try:
+                GOLD_IMG = pygame.transform.smoothscale(GOLD_IMG, (gnw, gnh))
+            except Exception:
+                GOLD_IMG = pygame.transform.scale(GOLD_IMG, (gnw, gnh))
+    except Exception:
+        pass
+
+# Diamond pickup (double-jump) asset
+DIAMOND_IMG = _load_diamond_image()
+DIAMOND_TARGET_LONG = 48  # slightly larger than old circle (diameter 36)
+if DIAMOND_IMG is not None:
+    try:
+        dw, dh = DIAMOND_IMG.get_width(), DIAMOND_IMG.get_height()
+        dlong = max(dw, dh)
+        target = max(1, DIAMOND_TARGET_LONG)
+        if abs(dlong - target) > 1:
+            dscale = target / float(dlong)
+            dnw = max(1, int(round(dw * dscale)))
+            dnh = max(1, int(round(dh * dscale)))
+            try:
+                DIAMOND_IMG = pygame.transform.smoothscale(DIAMOND_IMG, (dnw, dnh))
+            except Exception:
+                DIAMOND_IMG = pygame.transform.scale(DIAMOND_IMG, (dnw, dnh))
+        # set pickup radius from the final image size (half of max dimension)
+        try:
+            d_final_w, d_final_h = DIAMOND_IMG.get_width(), DIAMOND_IMG.get_height()
+            globals()['pickup_radius'] = max(8, int(round(max(d_final_w, d_final_h) / 2)))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+# HUD-sized diamond (top-left indicator when double jump available)
+DIAMOND_HUD_IMG = None
+DIAMOND_HUD_LONG = 28  # small UI variant
+if DIAMOND_IMG is not None:
+    try:
+        dw, dh = DIAMOND_IMG.get_width(), DIAMOND_IMG.get_height()
+        dlong = max(dw, dh)
+        if abs(dlong - DIAMOND_HUD_LONG) > 1:
+            dscale = DIAMOND_HUD_LONG / float(dlong)
+            dnw = max(1, int(round(dw * dscale)))
+            dnh = max(1, int(round(dh * dscale)))
+            try:
+                DIAMOND_HUD_IMG = pygame.transform.smoothscale(DIAMOND_IMG, (dnw, dnh))
+            except Exception:
+                DIAMOND_HUD_IMG = pygame.transform.scale(DIAMOND_IMG, (dnw, dnh))
+        else:
+            DIAMOND_HUD_IMG = DIAMOND_IMG.copy()
+    except Exception:
+        DIAMOND_HUD_IMG = None
+arrows = []  # list of dicts: {x,y,vx,vy,angle}
+arrow_spawn_timer = 0
+arrow_next_spawn = random.randint(ARROW_SPAWN_MIN_MS, ARROW_SPAWN_MAX_MS)
 
 # Platform sprite size (scaled down proportionally to make platforms shorter)
 PLATFORM_IMG = None
@@ -581,6 +737,63 @@ def show_dead_menu(current_score, best_score):
         pygame.display.flip()
         clock.tick(FPS)
 
+def handle_death():
+    """Handle player's death (arrow hit or fall). Returns action to continue or quit the loop."""
+    global score, score_timer, double_jump_available, double_jump_used, pickup_spawned, next_spawn_score
+    best_score = get_best_score()
+    if score > best_score:
+        set_best_score(score)
+        best_score = score
+    choice = show_dead_menu(score, best_score)
+    if choice == 'restart':
+        # reset game state
+        score = 0
+        score_timer = 0
+        reset_player()
+        reset_ground()
+        if ground_segments:
+            first_top = ground_segments[0][1]
+            player_y_local = first_top - player_height + (player_sprites.ground_foot_offset() if hasattr(player_sprites, 'ground_foot_offset') else 0)
+            globals()['player_y'] = player_y_local
+        # reset pickup/double-jump state for new run
+        double_jump_available = False
+        double_jump_used = False
+        pickup_spawned = False
+        next_spawn_score = 10
+        # reset arrows and golds
+        globals()['arrows'].clear()
+        globals()['arrow_spawn_timer'] = 0
+        globals()['arrow_next_spawn'] = random.randint(ARROW_SPAWN_MIN_MS, ARROW_SPAWN_MAX_MS)
+        globals()['golds'].clear()
+        globals()['gold_spawn_timer'] = 0
+        globals()['gold_next_spawn'] = random.randint(GOLD_SPAWN_MIN_MS, GOLD_SPAWN_MAX_MS)
+        return 'continue'
+    elif choice == 'menu':
+        go_start = show_menu()
+        if go_start:
+            score = 0
+            score_timer = 0
+            reset_player()
+            reset_ground()
+            if ground_segments:
+                first_top = ground_segments[0][1]
+                globals()['player_y'] = first_top - player_height + (player_sprites.ground_foot_offset() if hasattr(player_sprites, 'ground_foot_offset') else 0)
+            double_jump_available = False
+            double_jump_used = False
+            pickup_spawned = False
+            next_spawn_score = 10
+            globals()['arrows'].clear()
+            globals()['arrow_spawn_timer'] = 0
+            globals()['arrow_next_spawn'] = random.randint(ARROW_SPAWN_MIN_MS, ARROW_SPAWN_MAX_MS)
+            globals()['golds'].clear()
+            globals()['gold_spawn_timer'] = 0
+            globals()['gold_next_spawn'] = random.randint(GOLD_SPAWN_MIN_MS, GOLD_SPAWN_MAX_MS)
+            return 'continue'
+        else:
+            return 'quit'
+    else:
+        return 'quit'
+
 # Main game loop
 # Show start menu first
 start = show_menu()
@@ -721,49 +934,76 @@ while running:
                 double_jump_available = True
                 pickup_spawned = False
 
-    # Restart game if player falls off (dead zone)
-    if player_y > HEIGHT:
-        best_score = get_best_score()
-        if score > best_score:
-            set_best_score(score)
-            best_score = score
-        # Show in-process dead menu and handle the player's choice
-        choice = show_dead_menu(score, best_score)
-        if choice == 'restart':
-            # reset game state
-            score = 0
-            score_timer = 0
-            reset_player()
-            reset_ground()
-            if ground_segments:
-                first_top = ground_segments[0][1]
-                player_y = first_top - player_height + (player_sprites.ground_foot_offset() if hasattr(player_sprites, 'ground_foot_offset') else 0)
-            # reset pickup/double-jump state for new run
-            double_jump_available = False
-            double_jump_used = False
-            pickup_spawned = False
-            next_spawn_score = 10
-            continue
-        elif choice == 'menu':
-            # go back to main menu
-            go_start = show_menu()
-            if go_start:
-                score = 0
-                score_timer = 0
-                reset_player()
-                reset_ground()
-                if ground_segments:
-                    first_top = ground_segments[0][1]
-                    player_y = first_top - player_height + (player_sprites.ground_foot_offset() if hasattr(player_sprites, 'ground_foot_offset') else 0)
-                # reset pickup/double-jump state for new run
-                double_jump_available = False
-                double_jump_used = False
-                pickup_spawned = False
-                next_spawn_score = 10
+    # Arrow spawning and updates (active when score threshold reached and asset available)
+    if ARROW_IMG is not None and score >= ARROW_SPAWN_SCORE_THRESHOLD:
+        arrow_spawn_timer += dt
+        if arrow_spawn_timer >= arrow_next_spawn:
+            arrow_spawn_timer -= arrow_next_spawn
+            arrow_next_spawn = random.randint(ARROW_SPAWN_MIN_MS, ARROW_SPAWN_MAX_MS)
+            # spawn off the right side, random height
+            spawn_side = 'right'  # can extend to random left/right later
+            if spawn_side == 'right':
+                sx = WIDTH + ARROW_OFFSCREEN_MARGIN
+                sy = random.randint(60, HEIGHT - 120)
+            else:
+                sx = -ARROW_OFFSCREEN_MARGIN
+                sy = random.randint(60, HEIGHT - 120)
+            # aim at player's current center
+            px = int(player_x + player_width/2)
+            py = int(player_y + player_height/2)
+            dx = px - sx
+            dy = py - sy
+            dist = math.hypot(dx, dy)
+            if dist <= 0:
+                dist = 1
+            vx = (dx / dist) * ARROW_SPEED
+            vy = (dy / dist) * ARROW_SPEED
+            angle = math.degrees(math.atan2(-vy, vx))
+            if ARROW_BASE_DIRECTION.lower() == 'left':
+                angle += 180.0
+            arrows.append({'x': float(sx), 'y': float(sy), 'vx': vx, 'vy': vy, 'angle': angle})
+
+        # update arrows
+        to_remove = []
+        for i, a in enumerate(arrows):
+            a['x'] += a['vx'] * (dt / 1000.0)
+            a['y'] += a['vy'] * (dt / 1000.0)
+            # remove if far off-screen
+            if (a['x'] < -ARROW_OFFSCREEN_MARGIN*2 or a['x'] > WIDTH + ARROW_OFFSCREEN_MARGIN*2 or
+                a['y'] < -ARROW_OFFSCREEN_MARGIN*2 or a['y'] > HEIGHT + ARROW_OFFSCREEN_MARGIN*2):
+                to_remove.append(i)
+        if to_remove:
+            for idx in reversed(to_remove):
+                arrows.pop(idx)
+
+        # collision with player (use reduced collision rect as above)
+        collision_width = int(player_width * 0.7)
+        collision_height = int(player_height * 0.8)
+        collision_x = player_x + (player_width - collision_width) // 2
+        collision_y = player_y + (player_height - collision_height)
+        player_rect = pygame.Rect(int(collision_x), int(collision_y), int(collision_width), int(collision_height))
+        hit = False
+        for a in arrows:
+            # Rotate image for proper rect size
+            rotated = pygame.transform.rotate(ARROW_IMG, a['angle'])
+            rect = rotated.get_rect(center=(int(a['x']), int(a['y'])))
+            if rect.colliderect(player_rect):
+                hit = True
+                break
+        if hit:
+            act = handle_death()
+            if act == 'continue':
+                # start next loop iteration cleanly
                 continue
             else:
                 running = False
                 break
+
+    # Restart game if player falls off (dead zone)
+    if player_y > HEIGHT:
+        act = handle_death()
+        if act == 'continue':
+            continue
         else:
             running = False
             break
@@ -787,13 +1027,72 @@ while running:
         else:
             pygame.draw.rect(screen, (50, 205, 50), (int(seg_x), int(seg_y), seg_w, seg_h))
 
-    # Draw pickup if spawned
+    # Draw pickup if spawned (use diamond sprite if available)
     if pickup_spawned:
-        pygame.draw.circle(screen, (255, 215, 0), (int(pickup_x), int(pickup_y)), pickup_radius)
+        if 'DIAMOND_IMG' in globals() and DIAMOND_IMG is not None:
+            rect = DIAMOND_IMG.get_rect(center=(int(pickup_x), int(pickup_y)))
+            screen.blit(DIAMOND_IMG, rect.topleft)
+        else:
+            pygame.draw.circle(screen, (255, 215, 0), (int(pickup_x), int(pickup_y)), pickup_radius)
 
-    # Draw indicator if player has double-jump available
+    # Gold coin spawning and updates
+    if GOLD_IMG is not None:
+        # spawn
+        gold_spawn_timer += dt
+        if len(golds) < GOLD_MAX_ACTIVE and gold_spawn_timer >= gold_next_spawn:
+            gold_spawn_timer -= gold_next_spawn
+            gold_next_spawn = random.randint(GOLD_SPAWN_MIN_MS, GOLD_SPAWN_MAX_MS)
+            gx = WIDTH + GOLD_OFFSCREEN_MARGIN
+            # pick a vertical band that is generally near player path
+            gy = random.randint(int(HEIGHT * 0.4), int(HEIGHT * 0.75))
+            golds.append({'x': float(gx), 'y': float(gy)})
+        # move with world and cull
+        to_remove = []
+        for i, g in enumerate(golds):
+            g['x'] -= GROUND_SCROLL_PPS * (dt / 1000.0)
+            if g['x'] < -GOLD_OFFSCREEN_MARGIN * 2:
+                to_remove.append(i)
+        if to_remove:
+            for idx in reversed(to_remove):
+                golds.pop(idx)
+
+        # collision with player
+        collision_width = int(player_width * 0.7)
+        collision_height = int(player_height * 0.8)
+        collision_x = player_x + (player_width - collision_width) // 2
+        collision_y = player_y + (player_height - collision_height)
+        player_rect = pygame.Rect(int(collision_x), int(collision_y), int(collision_width), int(collision_height))
+        to_remove = []
+        for i, g in enumerate(golds):
+            rect = GOLD_IMG.get_rect(center=(int(g['x']), int(g['y'])))
+            if rect.colliderect(player_rect):
+                to_remove.append(i)
+                # increment score when collected
+                score += 1
+        if to_remove:
+            for idx in reversed(to_remove):
+                golds.pop(idx)
+
+    # Draw arrows above platforms and pickup, below the player
+    if ARROW_IMG is not None and arrows:
+        for a in arrows:
+            rotated = pygame.transform.rotate(ARROW_IMG, a['angle'])
+            rect = rotated.get_rect(center=(int(a['x']), int(a['y'])))
+            screen.blit(rotated, rect.topleft)
+
+    # Draw indicator if player has double-jump available (use diamond HUD sprite if available)
     if double_jump_available:
-        pygame.draw.circle(screen, (30, 144, 255), (20, 60), 12)
+        if DIAMOND_HUD_IMG is not None:
+            rect = DIAMOND_HUD_IMG.get_rect(center=(28, 60))
+            screen.blit(DIAMOND_HUD_IMG, rect.topleft)
+        else:
+            pygame.draw.circle(screen, (30, 144, 255), (20, 60), 12)
+
+    # Draw golds (below player)
+    if GOLD_IMG is not None and golds:
+        for g in golds:
+            rect = GOLD_IMG.get_rect(center=(int(g['x']), int(g['y'])))
+            screen.blit(GOLD_IMG, rect.topleft)
 
     # Draw player sprite
     current_sprite = player_sprites.get_current_sprite()
